@@ -24,7 +24,7 @@ function usage {
 Usage:
   --plan          create a delete script instead of deleting
   --dry-run       perform a trial run with no changes made
-  --ext EXT       file extensions to look for (default: mkv)
+  --ext EXT       file extensions to look for, set * for any (default: mkv)
   --tool NAME     hashing tool (default: b3sum)
   -h, --help      show this help
 EOF
@@ -120,7 +120,7 @@ mapfile -t FILES < <(find . -type f -name "*.${EXT}")
 
 [ -f .meta/hashes ] && eval "$(cat .meta/hashes)"
 
-echo "${FILES[@]}" >".meta/all-$(date +%y%m%d%H)"
+echo "${FILES[@]}" >|".meta/all-$(date +%y%m%d%H)"
 
 #  █░░░░░░░░░░░░░░░░░░░░░░░ ⌜ MAIN ⌟ ░░░
 for F in "${FILES[@]}"; do
@@ -135,7 +135,6 @@ for F in "${FILES[@]}"; do
     echo -e " => $C3 ${F}"
     rmdup "$F"
   fi
-  sleep 0.01
 done
 
 logusage pos

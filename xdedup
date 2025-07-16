@@ -9,6 +9,7 @@ set -o noclobber
 #  █░░░░░░░░░░░░░░░░░░░░░░░ ⌜ DEFAULT ⌟ ░░░
 declare -g EXT="mkv"
 declare -g TOOL="b3sum"
+declare -g PLAN_PATH="/tmp/dedup_job"
 declare -a FILES
 declare -A SUMS
 declare -A HASH
@@ -31,9 +32,16 @@ EOF
   exit 0
 }
 
+function log {
+  declare -a modes=( _ errr okay warn info test hint )
+  local fg="$(( $1 + 8))"
+  echo -ne " \e[48;5;${1};38;5;232;1m ${modes[${1}]^^} \e[0m"
+  echo -e "\e[38;5;${fg}m ${*:2} \e[0m"
+}
+
 #  █░░░░░░░░░░░░░░░░░░░░░░░ ⌜ CACHE ⌟ ░░░
 function commit {
-  echo "Commiting hashes..."
+  log 4 "Commiting hashes..."
   declare -p HASH >|.meta/hashes
 }
 
@@ -48,11 +56,9 @@ function on_error {
 
 trap 'on_error $LINENO "$BASH_COMMAND"' ERR
 trap commit EXIT
-trap 'echo "Interrupted"; commit; exit 1' INT
+# trap 'echo "Interrupted"; commit; exit 1' INT
 
-#  █░░░░░░░░░░░░░░░░░░░░░░░ ⌜ COLORS ⌟ ░░░
-C='\e[0m'
-for i in {0..7}; do declare -g "C${i}"="\e[1;3${i}m"; done
+[ -f .meta/hashes ] && eval "$(cat .meta/hashes)"
 
 #  █░░░░░░░░░░░░░░░░░░░░░░░ ⌜ OPTIONS ⌟ ░░░
 while [[ $# -gt 0 ]]; do
@@ -63,6 +69,8 @@ while [[ $# -gt 0 ]]; do
     ;;
   -p | --plan)
     PLAN=1
+    log 3 running PLAN mode
+    log 6 PLAN_PATH: "$PLAN_PATH"
     shift
     ;;
   --ext)
@@ -75,7 +83,7 @@ while [[ $# -gt 0 ]]; do
     ;;
   -h | --help) usage ;;
   *)
-    echo "$C1 unknown arg: $1"
+    log 1 "unknown arg: $1"
     usage
     ;;
   esac
@@ -83,16 +91,17 @@ done
 
 #  █░░░░░░░░░░░░░░░░░░░░░░░ ⌜ ASSERTS ⌟ ░░░
 command -v "$TOOL" >/dev/null || {
-  echo -e "$C1 ❌ missing: $TOOL" >&2
+  log 1 "❌ missing: $TOOL" >&2
   exit 127
 }
 
 #  █░░░░░░░░░░░░░░░░░░░░░░░ ⌜ DEBUG ⌟ ░░░
-echo -e "$C5 -->> running dedupe${C6} v${VER}"
-echo -e "$C6 --:: EXT    : $C3 *.${EXT}"
-echo -e "$C6 --:: TOOL   : $C3 ${TOOL}"
-echo -e "$C6 --:: DRYRUN : $C3 ${DRY}"
-echo -e "$C7 ----------------------$C"
+log 4 " -->> running dedupe v${VER}"
+log 6 " --:: EXT    :  *.${EXT}"
+log 6 " --:: TOOL   :  ${TOOL}"
+log 6 " --:: PLAN   :  ${PLAN}"
+log 6 " --:: DRYRUN :  ${DRY}"
+log 6 " ----------------------"
 sleep 7
 
 #  █░░░░░░░░░░░░░░░░░░░░░░░ ⌜ CORE ⌟ ░░░
@@ -101,10 +110,11 @@ function logusage { du -hd1 | sort -h | tee "/tmp/dedup_${1}"; }
 function gensum { "$TOOL" "$1" | awk '{print $1}'; }
 
 function rmdup {
-  D=$D+1
-  ((PLAN)) && {
-    echo "rm $1" >>/tmp/dedup_job
-  } || echo "rm $1 --verbose"
+  if ((PLAN)); then
+    echo "rm $1" >>"${PLAN_PATH}"
+  else
+    rm "$1" --verbose
+  fi
 }
 
 #  ━╸╺━ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╸╺━
@@ -118,28 +128,26 @@ logusage pre
 
 mapfile -t FILES < <(find . -type f -name "*.${EXT}")
 
-[ -f .meta/hashes ] && eval "$(cat .meta/hashes)"
-
 echo "${FILES[@]}" >|".meta/all-$(date +%y%m%d%H)"
 
 #  █░░░░░░░░░░░░░░░░░░░░░░░ ⌜ MAIN ⌟ ░░░
 for F in "${FILES[@]}"; do
-  echo -e ":>${C6}$((I++)) ${C7}${F::70}"
+  log 5 "[$((++I))] ${F::70}"
 
   [ "${HASH[$F]}" = "" ] && HASH[$F]="$(gensum "$F")"
 
   if [ "${SUMS[${HASH[$F]}]}" = "" ]; then
     SUMS["${HASH[$F]}"]="$F"
   else
-    echo -e "${C3}FOUND DUPLICATE"
-    echo -e " => $C3 ${F}"
+    log 3 "FOUND DUPLICATE ($((++D)))"
+    log 5 " => ${F}"
     rmdup "$F"
   fi
 done
 
 logusage pos
 
-echo -e "${C7} SCANNED ${C6}${I}"
-echo -e "${C7} REMOVED ${C6}${D}"
+log 4 "SCANNED ${I}"
+log 4 "REMOVED ${D}"
 
 # vim: ft=bash

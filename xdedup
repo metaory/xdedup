@@ -33,8 +33,8 @@ EOF
 }
 
 function log {
-  declare -a modes=( _ errr okay warn info test hint )
-  local fg="$(( $1 + 8))"
+  declare -a modes=(_ errr okay warn info test hint)
+  local fg="$(($1 + 8))"
   echo -ne " \e[48;5;${1};38;5;232;1m ${modes[${1}]^^} \e[0m"
   echo -e "\e[38;5;${fg}m ${*:2} \e[0m"
 }
@@ -102,7 +102,7 @@ log 6 " --:: TOOL   :  ${TOOL}"
 log 6 " --:: PLAN   :  ${PLAN}"
 log 6 " --:: DRYRUN :  ${DRY}"
 log 6 " ----------------------"
-sleep 7
+sleep 3
 
 #  █░░░░░░░░░░░░░░░░░░░░░░░ ⌜ CORE ⌟ ░░░
 function logusage { du -hd1 | sort -h | tee "/tmp/dedup_${1}"; }
@@ -111,7 +111,7 @@ function gensum { "$TOOL" "$1" | awk '{print $1}'; }
 
 function rmdup {
   if ((PLAN)); then
-    echo "rm $1" >>"${PLAN_PATH}"
+    echo "rm $1" >>"$PLAN_PATH"
   else
     rm "$1" --verbose
   fi
@@ -126,13 +126,14 @@ rm /tmp/dedup_* &>/dev/null || :
 
 logusage pre
 
-mapfile -t FILES < <(find . -type f -name "*.${EXT}")
-
-echo "${FILES[@]}" >|".meta/all-$(date +%y%m%d%H)"
+mapfile -t FILES < <(find . -type f -name "*.${EXT}" | tee ".meta/all-$(date +%y%m%d%H)")
+declare -i T="${#FILES[@]}"
 
 #  █░░░░░░░░░░░░░░░░░░░░░░░ ⌜ MAIN ⌟ ░░░
+last="$(date +%s)"
 for F in "${FILES[@]}"; do
-  log 5 "[$((++I))] ${F::70}"
+  ((++I))
+  log 5 "[${I}] ${F::70}"
 
   [ "${HASH[$F]}" = "" ] && HASH[$F]="$(gensum "$F")"
 
@@ -140,9 +141,18 @@ for F in "${FILES[@]}"; do
     SUMS["${HASH[$F]}"]="$F"
   else
     log 3 "FOUND DUPLICATE ($((++D)))"
-    log 5 " => ${F}"
+    log 3 " => ${F}"
     rmdup "$F"
   fi
+
+  ((I % 20)) || {
+    now="$(date +%s)"
+    seconds="$((now-last))"
+    minutes="$(bc -l <<<"scale=1; ${seconds}/60")"
+    log 6 " ${I}/${T} \t $(((I*100)/T))% \t ${seconds}s :: ${minutes}m"
+    last="$now"
+    commit
+  }
 done
 
 logusage pos
